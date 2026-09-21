@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#07111f">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Neon Run — 2º Desenvolvimento de Sistemas</title>
+<link rel="manifest" href="manifest.json">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;user-select:none;-webkit-user-select:none}
+html,body{width:100%;height:100%;overflow:hidden;background:#050914;font-family:Arial,sans-serif}
+body{touch-action:none}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#hud{position:fixed;top:max(12px,env(safe-area-inset-top));left:max(16px,env(safe-area-inset-left));right:max(16px,env(safe-area-inset-right));z-index:3;color:#fff;font-size:13px;letter-spacing:1px;text-shadow:0 0 10px #00eaff}
+#school{font-size:clamp(12px,2vw,18px);font-weight:bold;color:#6ffaff;letter-spacing:2px;margin-bottom:5px}
+#phase{color:#fff;font-weight:bold}
+#bar{height:6px;margin:8px auto 0;max-width:480px;background:#ffffff18;border:1px solid #ffffff22;border-radius:10px;overflow:hidden}
+#fill{height:100%;width:0;background:linear-gradient(90deg,#00eaff,#ff35d6);box-shadow:0 0 12px #00eaff}
+#pause{position:fixed;right:max(16px,env(safe-area-inset-right));top:max(18px,calc(env(safe-area-inset-top) + 10px));z-index:4;width:44px;height:44px;border:1px solid #49eaff88;background:#091528cc;color:#fff;border-radius:12px;font-size:17px;box-shadow:0 0 15px #00eaff33}
+.overlay{position:fixed;inset:0;z-index:10;background:linear-gradient(135deg,#02050ddd,#071326eF);display:flex;align-items:center;justify-content:center;padding:24px}
+.card{text-align:center;width:min(92vw,520px);color:#fff}
+.card h1{font-size:clamp(38px,9vw,68px);font-weight:800;letter-spacing:6px;margin-bottom:4px;color:#fff;text-shadow:0 0 12px #00eaff,0 0 35px #ff28d8}
+.card h2{font-size:32px;font-weight:800;margin-bottom:10px;color:#6ffaff;text-shadow:0 0 12px #00eaff}
+.card .school-title{font-size:clamp(16px,3vw,24px);font-weight:bold;letter-spacing:2px;color:#ff67df;margin-bottom:18px}
+.card p{color:#c5d3e4;line-height:1.6;font-size:14px;margin-bottom:22px}
+button.main{border:1px solid #63efff;background:linear-gradient(90deg,#06364a,#4c0a4c);color:#fff;padding:14px 34px;border-radius:12px;font-size:15px;font-weight:bold;box-shadow:0 0 20px #00eaff33;cursor:pointer}
+button.main:active{transform:scale(.97)}
+.small{font-size:12px!important;margin-top:16px!important;color:#91a5ba!important}
+.hidden{display:none}
+#rotate{display:none;position:fixed;inset:0;z-index:30;background:#030712;color:#ddd;align-items:center;justify-content:center;text-align:center;padding:30px}
+@media (orientation:portrait) and (max-width:700px){
+  #rotate{display:flex}
+  #menu,#message{display:none!important}
+}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud">
+  <div id="school">2º DESENVOLVIMENTO DE SISTEMAS</div>
+  <div><span id="phase">FASE 1</span> • DISTÂNCIA: <span id="score">0</span>m</div>
+  <div id="bar"><div id="fill"></div></div>
+</div>
+
+<button id="pause" aria-label="Pausar">Ⅱ</button>
+
+<div id="menu" class="overlay">
+  <div class="card">
+    <h1>NEON RUN</h1>
+    <div class="school-title">2º DESENVOLVIMENTO DE SISTEMAS</div>
+    <p>Corra, desvie dos obstáculos e use o pulo duplo para chegar ao final.</p>
+    <button class="main" id="start">COMEÇAR</button>
+    <p class="small">TOQUE / ESPAÇO = PULAR • 2 PULOS NO AR</p>
+  </div>
+</div>
+
+<div id="message" class="overlay hidden">
+  <div class="card">
+    <h2 id="messageTitle">Fim de jogo</h2>
+    <p id="messageText">Tente novamente e chegue mais longe.</p>
+    <button class="main" id="restart">JOGAR NOVAMENTE</button>
+  </div>
+</div>
+
+<div id="rotate">
+  <div><h2>Gire o celular</h2><p>O jogo foi otimizado para jogar na horizontal.</p></div>
+</div>
+
+<script>
+const canvas=document.getElementById("game"),ctx=canvas.getContext("2d");
+const scoreEl=document.getElementById("score"),fill=document.getElementById("fill");
+const phaseEl=document.getElementById("phase");
+const menu=document.getElementById("menu"),message=document.getElementById("message");
+const title=document.getElementById("messageTitle"),text=document.getElementById("messageText");
+const startBtn=document.getElementById("start"),restartBtn=document.getElementById("restart"),pauseBtn=document.getElementById("pause");
+
+let W=0,H=0,dpr=1,state="menu",camera=0,distance=0,speed=6,particles=[],stars=[];
+const groundH=88;
+const phases=[
+  {name:"FASE 1",start:0,end:2800,color:"#00eaff"},
+  {name:"FASE 2",start:2800,end:5700,color:"#7dff55"},
+  {name:"FASE 3",start:5700,end:8600,color:"#ff39d6"}
+];
+const levelLength=8600;
+const player={x:150,y:0,w:42,h:42,vy:0,grounded:false,rot:0,jumps:0,bob:0};
+let obstacles=[];
+
+function resize(){
+  dpr=Math.min(devicePixelRatio||1,2); W=innerWidth; H=innerHeight;
+  canvas.width=Math.floor(W*dpr); canvas.height=Math.floor(H*dpr);
+  canvas.style.width=W+"px"; canvas.style.height=H+"px";
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  if(state==="menu") resetPlayer();
+  makeStars();
+}
+addEventListener("resize",resize);
+
+function makeStars(){
+  stars=Array.from({length:70},()=>({x:Math.random()*W,y:30+Math.random()*Math.max(100,H-groundH-80),r:.5+Math.random()*1.8,s:.2+Math.random()*1.1}));
+}
+function resetPlayer(){
+  player.x=150; player.y=H-groundH-player.h; player.vy=0; player.grounded=true; player.rot=0; player.jumps=0; player.bob=0;
+}
+function makeLevel(){
+  const data=[
+    [650,36,48],[850,36,65],[1100,36,48],[1190,36,48],[1450,36,70],
+    [1740,36,48],[1815,36,48],[1890,36,48],[2200,36,80],[2550,36,48],[2640,36,48],
+    [3000,36,72],[3370,36,48],[3450,36,48],[3530,36,48],[3910,36,88],
+    [4300,36,48],[4500,36,62],[4860,36,48],[4945,36,48],[5030,36,48],
+    [5400,36,92],[5790,36,50],[5880,36,70],[6250,36,50],[6340,36,50],
+    [6700,36,94],[7160,36,50],[7245,36,50],[7330,36,50],[7700,36,86],
+    [8040,36,52],[8180,36,65],[8350,36,52]
+  ];
+  obstacles=data.map(a=>({x:a[0],w:a[1],h:a[2],pulse:Math.random()*Math.PI*2}));
+}
+function particle(x,y,n=1,boost=1){
+  for(let i=0;i<n;i++) particles.push({x,y,vx:(-.8-Math.random()*2.4)*boost,vy:(Math.random()-.5)*2.5,s:1+Math.random()*3,life:1});
+}
+function updateParticles(){
+  for(const p of particles){p.x+=p.vx;p.y+=p.vy;p.vy+=.03;p.life-=.028}
+  particles=particles.filter(p=>p.life>0);
+}
+function jump(){
+  if(state!=="playing")return;
+  if(player.jumps<2){
+    player.vy=player.jumps===0?-13.2:-11.8;
+    player.grounded=false; player.jumps++;
+    particle(player.x+player.w/2,player.y+player.h,10,1.2);
+  }
+}
+function collide(o){
+  const ground=H-groundH, top=ground-o.h;
+  return player.x+player.w-8>o.x && player.x+8<o.x+o.w && player.y+player.h>top+7 && player.y<ground;
+}
+function startGame(){
+  state="playing"; menu.classList.add("hidden"); message.classList.add("hidden");
+  camera=0; distance=0; speed=6; particles=[]; makeLevel(); resetPlayer(); pauseBtn.textContent="Ⅱ";
+}
+function endGame(win=false){
+  state=win?"win":"gameover";
+  title.textContent=win?"VOCÊ VENCEU!":"FIM DE JOGO";
+  text.textContent=win?"Você completou as 3 fases do Neon Run!":"Você bateu em um obstáculo. Tente usar o pulo duplo.";
+  message.classList.remove("hidden");
+}
+function togglePause(){
+  if(state==="playing"){state="paused";pauseBtn.textContent="▶"}
+  else if(state==="paused"){state="playing";pauseBtn.textContent="Ⅱ"}
+}
+function currentPhase(){
+  for(const p of phases) if(player.x<p.end)return p;
+  return phases[2];
+}
+function update(){
+  if(state!=="playing")return;
+  speed=Math.min(9.2,speed+.00045);
+  player.vy+=.74; player.y+=player.vy;
+  const ground=H-groundH;
+  if(player.y+player.h>=ground){
+    player.y=ground-player.h; player.vy=0; player.grounded=true; player.jumps=0;
+    player.rot=Math.round(player.rot/(Math.PI/2))*Math.PI/2;
+  }else{player.grounded=false;player.rot+=.12}
+  player.x+=speed; camera=player.x-150;
+  player.bob+=.12;
+  distance=Math.floor(player.x/10); scoreEl.textContent=distance;
+  fill.style.width=Math.min(100,player.x/levelLength*100)+"%";
+  phaseEl.textContent=currentPhase().name;
+  if(Math.random()<.32)particle(player.x-3,player.y+player.h-4,1,.7);
+  updateParticles();
+  for(const o of obstacles)if(collide(o)){endGame();return}
+  if(player.x>=levelLength)endGame(true);
+}
+function background(){
+  const ph=currentPhase();
+  const grad=ctx.createLinearGradient(0,0,W,H);
+  grad.addColorStop(0,"#030711");grad.addColorStop(1,ph.color+"20");
+  ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);
+
+  // moving neon horizon
+  const horizon=H-groundH-30;
+  ctx.strokeStyle=ph.color+"22";ctx.lineWidth=1;
+  for(let y=100;y<horizon;y+=55){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}
+  for(let x=-(camera*.35%90);x<W;x+=90){
+    ctx.beginPath();ctx.moveTo(x,horizon);ctx.lineTo(W/2+(x-W/2)*.18,horizon-170);ctx.stroke();
+  }
+  for(const s of stars){
+    let x=(s.x-camera*s.s*.08)%W;if(x<0)x+=W;
+    ctx.globalAlpha=.25+.3*Math.sin(performance.now()/700+s.x);
+    ctx.fillStyle=ph.color;ctx.beginPath();ctx.arc(x,s.y,s.r,0,Math.PI*2);ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+function ground(){
+  const y=H-groundH, ph=currentPhase();
+  ctx.fillStyle="#06101d";ctx.fillRect(0,y,W,groundH);
+  ctx.fillStyle=ph.color;ctx.shadowColor=ph.color;ctx.shadowBlur=14;ctx.fillRect(0,y,W,3);ctx.shadowBlur=0;
+  ctx.strokeStyle=ph.color+"35";
+  for(let x=-(camera%55);x<W;x+=55){ctx.beginPath();ctx.moveTo(x,y+18);ctx.lineTo(x+25,y+42);ctx.stroke()}
+}
+function drawObstacle(o){
+  const x=o.x-camera,y=H-groundH,ph=currentPhase();
+  const pulse=.65+.35*Math.sin(performance.now()/180+o.pulse);
+  ctx.save();
+  ctx.shadowColor=ph.color;ctx.shadowBlur=10*pulse;
+  ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+o.w/2,y-o.h);ctx.lineTo(x+o.w,y-o.h*.05);ctx.closePath();
+  ctx.fillStyle="#101b2c";ctx.fill();ctx.strokeStyle=ph.color;ctx.lineWidth=2;ctx.stroke();ctx.restore();
+}
+function drawPlayer(){
+  const ph=currentPhase(),x=player.x-camera,y=player.y;
+  ctx.save();ctx.translate(x+player.w/2,y+player.h/2);ctx.rotate(player.rot);
+  const pulse=1+Math.sin(performance.now()/90)*.06;
+  ctx.scale(pulse,pulse);
+  ctx.shadowColor="#00f6ff";ctx.shadowBlur=20;
+  ctx.fillStyle="#0b2134";ctx.beginPath();ctx.arc(0,0,player.w/2,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle="#65f8ff";ctx.lineWidth=3;ctx.stroke();
+  ctx.shadowColor="#ff35d6";ctx.shadowBlur=12;
+  ctx.fillStyle="#ff48d9";ctx.beginPath();ctx.arc(-6,-5,7,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(7,-8,4,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle="#102033";ctx.beginPath();ctx.arc(8,-8,1.7,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+}
+function particlesDraw(){
+  for(const p of particles){
+    ctx.globalAlpha=p.life*.75;ctx.fillStyle=currentPhase().color;ctx.shadowColor=ctx.fillStyle;ctx.shadowBlur=8;
+    ctx.fillRect(p.x-camera,p.y,p.s,p.s);
+  }
+  ctx.globalAlpha=1;ctx.shadowBlur=0;
+}
+function draw(){
+  background();ground();obstacles.forEach(drawObstacle);particlesDraw();drawPlayer();
+  if(state==="paused"){
+    ctx.fillStyle="#02050dbd";ctx.fillRect(0,0,W,H);
+    ctx.fillStyle="#fff";ctx.textAlign="center";ctx.font="800 30px Arial";ctx.shadowColor="#00eaff";ctx.shadowBlur=14;
+    ctx.fillText("PAUSADO",W/2,H/2);ctx.shadowBlur=0;
+  }
+}
+function loop(){update();draw();requestAnimationFrame(loop)}
+
+startBtn.onclick=startGame;restartBtn.onclick=startGame;pauseBtn.onclick=togglePause;
+addEventListener("keydown",e=>{
+  if(e.code==="Space"||e.code==="ArrowUp"){e.preventDefault();state==="menu"?startGame():state==="gameover"||state==="win"?startGame():jump()}
+  if(e.code==="KeyR")startGame(); if(e.code==="Escape")togglePause();
+});
+canvas.addEventListener("pointerdown",e=>{
+  if(e.pointerType==="mouse"&&e.button!==0)return;
+  if(state==="menu")startGame();else if(state==="gameover"||state==="win")startGame();else if(state==="playing")jump();else if(state==="paused")togglePause();
+},{passive:false});
+document.addEventListener("visibilitychange",()=>{if(document.hidden&&state==="playing")togglePause()});
+
+resize();makeLevel();resetPlayer();loop();
+</script>
+<script>
+if("serviceWorker" in navigator) navigator.serviceWorker.register("./service-worker.js").catch(()=>{});
+</script>
+</body>
+</html>

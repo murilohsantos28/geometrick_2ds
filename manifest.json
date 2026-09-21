@@ -1,0 +1,10 @@
+{
+  "name":"Neon Run — 2º Desenvolvimento de Sistemas",
+  "short_name":"Neon Run",
+  "start_url":"./index.html",
+  "display":"fullscreen",
+  "orientation":"landscape",
+  "background_color":"#030711",
+  "theme_color":"#07111f",
+  "icons":[]
+}
